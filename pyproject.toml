@@ -1,3 +1,9 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+# requires = ["maturin>=1.9,<2.0"]
+# build-backend = "maturin"
+
 [project]
 name = "cs336_basics"
 version = "1.0.3"
@@ -20,11 +26,17 @@ dependencies = [
     "wandb>=0.19.7",
 ]
 
+[dependency-groups]
+dev = [
+    "ipython>=9.4.0",
+    "ruff>=0.12.1",
+    "scalene>=1.5.51",
+]
 
-
-[tool.setuptools.packages.find]
-include = ["cs336_basics"]
-
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "bpe-native."
+compatibility = "linux"
 
 [tool.uv]
 package = true
