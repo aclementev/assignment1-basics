@@ -1,12 +1,20 @@
+import operator
 import os
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from concurrent.futures import ProcessPoolExecutor
+from functools import reduce
 from itertools import takewhile
 
 import regex as re
 
 PAT = rb"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 PAT_STR = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+# For the list of available implementations, see below
+DEFAULT_PRETOK_IMPL = "parallel"
+
+type PretokStrategy = Callable[[bytes, list[bytes]], dict[tuple[bytes, ...], int]]
+
 
 # from typing import Protocol, Self
 
@@ -48,11 +56,17 @@ def run_train_bpe(
     with open(input_path) as f:
         corpus = f.read()
 
-    vocab, merges = naive_bpe(corpus, vocab_size=vocab_size, special_tokens=special_tokens)
+    # Configure the pretokenization strategy
+    pretok_strategy_name = os.environ.get("BPE_PRETOK_STRATEGY") or DEFAULT_PRETOK_IMPL
+    pretok_strategy = PRETOK_IMPLS[pretok_strategy_name]
+
+    vocab, merges = naive_bpe(
+        corpus, vocab_size=vocab_size, special_tokens=special_tokens, pretok_strategy=pretok_strategy
+    )
     return vocab, merges
 
 
-def preprocess_special_tokens(corpus: bytes, special_tokens: list[bytes]) -> Iterable[bytes]:
+def split_special_tokens(corpus: bytes, special_tokens: list[bytes]) -> Iterable[bytes]:
     """Count the occurrences of each of the strings in `special_tokens` inside `corpus` returning them
     in a frequency table, and returns a string which does not contain the `special_tokens`"""
     if not special_tokens:
@@ -65,24 +79,12 @@ def preprocess_special_tokens(corpus: bytes, special_tokens: list[bytes]) -> Ite
 
 def pretokenized_counts(corpus: bytes, special_tokens: list[bytes]) -> dict[tuple[bytes, ...], int]:
     """Run a pre-tokenizer similar to the one used by GPT-2, returning pretokenized counts for efficiency"""
-
-    # TODO(alvaro): Use re.finditer and count somehow without materializing all tokens
-    # FIXME(alvaro): How do we handle the special tokens here? The pre-tokenization will split them
-    # I think the correct way is to count them separately and then pre-tokenize without them
-    text_parts = preprocess_special_tokens(corpus, special_tokens)
-    pattern = re.compile(PAT)
-
-    freqs: Counter[tuple[bytes, ...]] = Counter()
-    for part in text_parts:
-        # TODO(alvaro): There's a concurrent mode, maybe it works okay
-        scanner = pattern.finditer(part, concurrent=True)
-        freqs += Counter(tuple(c.to_bytes() for c in m.group(0)) for m in scanner)
-
-    return freqs
+    text_parts = split_special_tokens(corpus, special_tokens)
+    return _pretokenize_parts(text_parts)
 
 
 def naive_bpe(
-    corpus: str, vocab_size: int, special_tokens: list[str]
+    corpus: str, vocab_size: int, special_tokens: list[str], pretok_strategy: PretokStrategy | None = None
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     merges = []
     corpus_bytes = corpus.encode("utf-8")
@@ -92,7 +94,9 @@ def naive_bpe(
     vocab_lst = [*special_tok_bytes, *(i.to_bytes() for i in range(256))]
 
     # 2. Pre-tokenize
-    tok_counts = pretokenized_counts(corpus_bytes, special_tok_bytes)
+    if not pretok_strategy:
+        pretok_strategy = PRETOK_IMPLS[DEFAULT_PRETOK_IMPL]
+    tok_counts = pretok_strategy(corpus_bytes, special_tok_bytes)
 
     # 3. BPE merges on pre-tokenized data until len(vocab) == vocab_size
     i = 1
@@ -160,3 +164,72 @@ def _merge_key_token(key: tuple[bytes, ...], new_tok: bytes, merged: tuple[bytes
         else:
             yield left
             left, right = right, next(key_iter, None)
+
+
+def _pretokenize_parts(parts: Iterable[bytes]) -> dict[tuple[bytes, ...], int]:
+    """Process a sequence of text parts into"""
+    pattern = re.compile(PAT)
+    freqs: Counter[tuple[bytes, ...]] = Counter()
+    for part in parts:
+        # TODO(alvaro): There's a concurrent mode, maybe it works okay
+        scanner = pattern.finditer(part, concurrent=True)
+        freqs += Counter(tuple(c.to_bytes() for c in m.group(0)) for m in scanner)
+
+    return freqs
+
+
+def pretokenized_counts_parallel(corpus: bytes, special_tokens: list[bytes]) -> dict[tuple[bytes, ...], int]:
+    """Run a pre-tokenizer similar to the one used by GPT-2"""
+    text_parts = split_special_tokens(corpus, special_tokens)
+
+    # FIXME(alvaro): Use the number of CPU - 1?
+    N = 8
+    chunks = _split_chunks(text_parts, N)
+    with ProcessPoolExecutor(max_workers=N) as executor:
+        chunks_res = executor.map(_pretokenize_parts, chunks)
+
+    # Collect the results from all the workers
+    return dict(reduce(operator.add, chunks_res))
+
+
+def run_pretokenize(chunk):
+    import traceback
+
+    print(f"Running pretokenize for {type(chunk)}")
+    try:
+        _pretokenize_parts(chunk)
+    except Exception:
+        print("Ayo something broke")
+        traceback.print_exc()
+        raise
+
+
+def _split_chunks(parts: Iterable[bytes], n: int) -> Iterable[Iterable[bytes]]:
+    """Split an iterable of text parts (i.e. as split by special tokens) and group them
+    into `n` chunks of size up to N (bytes) that can be processed concurrently
+    """
+
+    # FIXME(alvaro): Figure out a way to do this without materializing the whole text?
+    part_lst = list(parts)
+    total_size = sum(len(p) for p in part_lst)
+    chunk_size = total_size // n
+
+    chunk: list[bytes] = []
+    run_size = 0
+    for part in part_lst:
+        chunk.append(part)
+        run_size += len(part)
+        if run_size >= chunk_size:
+            yield chunk
+            chunk = []
+            run_size = 0
+
+    # Return the accumulated chunk if there are no more parts
+    if chunk:
+        yield chunk
+
+
+PRETOK_IMPLS = {
+    "naive": pretokenized_counts,
+    "parallel": pretokenized_counts_parallel,
+}
