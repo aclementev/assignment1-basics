@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 itertools = "0.14.0"
 onig = "6.5.1"
 pyo3 = { version = "0.25.1", features = ["abi3-py310"] }
+rayon = "1.10.0"
 regex = "1.11.1"
 
 [dev-dependencies]

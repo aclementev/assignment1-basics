@@ -10,11 +10,12 @@ from typing import TypeAlias
 import regex as re
 
 from cs336_basics._bpe import pretokenize_naive as pretokenize_naive_rust  # type: ignore
+from cs336_basics._bpe import pretokenize_parallel as pretokenize_parallel_rust  # type: ignore
 
 PAT = rb"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 PAT_STR = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 # For the list of available implementations, see below
-DEFAULT_PRETOK_IMPL = "naive-rust"
+DEFAULT_PRETOK_IMPL = "parallel-rust"
 
 PretokStrategy: TypeAlias = Callable[[bytes, list[bytes]], dict[tuple[bytes, ...], int]]
 
@@ -86,12 +87,20 @@ def pretokenized_counts(corpus: bytes, special_tokens: list[bytes]) -> dict[tupl
     return _pretokenize_parts(text_parts)
 
 
-def pretokenized_counts_rust(corpus: bytes, special_tokens: list[bytes]) -> dict[tuple[bytes, ...], int]:
+def pretokenized_counts_rust_naive(corpus: bytes, special_tokens: list[bytes]) -> dict[tuple[bytes, ...], int]:
     """Run a pre-tokenizer similar to the one used by GPT-2, returning pretokenized counts for efficiency.
 
     This one uses a pretokenization implemented in rust
     """
     return pretokenize_naive_rust(corpus, special_tokens)
+
+
+def pretokenized_counts_rust_parallel(corpus: bytes, special_tokens: list[bytes]) -> dict[tuple[bytes, ...], int]:
+    """Run a pre-tokenizer similar to the one used by GPT-2, returning pretokenized counts for efficiency.
+
+    This one uses a pretokenization implemented in rust, using multiple threads.
+    """
+    return pretokenize_parallel_rust(corpus, special_tokens)
 
 
 def naive_bpe(
@@ -230,5 +239,6 @@ def _split_chunks(parts: Iterable[bytes], n: int) -> Iterable[Iterable[bytes]]:
 PRETOK_IMPLS = {
     "naive": pretokenized_counts,
     "parallel": pretokenized_counts_parallel,
-    "naive-rust": pretokenized_counts_rust,
+    "naive-rust": pretokenized_counts_rust_naive,
+    "parallel-rust": pretokenized_counts_rust_parallel,
 }

@@ -1,4 +1,4 @@
-from cs336_basics.bpe import naive_bpe, pretokenized_counts_rust_naive
+from cs336_basics.bpe import naive_bpe, pretokenized_counts_rust_parallel
 
 
 def main():
@@ -6,7 +6,7 @@ def main():
     with open("data/TinyStoriesV2-GPT4-train-tiny.txt") as f:
         corpus = f.read()
 
-    naive_bpe(corpus, 1000, special_tokens, pretok_strategy=pretokenized_counts_rust_naive)
+    naive_bpe(corpus, 1000, special_tokens, pretok_strategy=pretokenized_counts_rust_parallel)
 
 
 if __name__ == "__main__":
