@@ -10,7 +10,7 @@ const PAT: &str = r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s
 /// Split the input string `corpus` into pre-tokens removing the `special_tokens` from them
 /// and return a HashMap with the frequency of each pre-token, where the pre-tokens are
 /// representend by their individual bytes (as `&[u8]`)
-fn pretokenize_single<'a>(corpus: &'a str, special_tokens: &[&str]) -> HashMap<&'a str, usize> {
+pub fn pretokenize_single<'a>(corpus: &'a str, special_tokens: &[&str]) -> HashMap<&'a str, usize> {
     // Split text by special tokens
     let pretok_re_str = Itertools::intersperse(
         // FIXME(alvaro): We use the `regex` library's escaper, which could not handle

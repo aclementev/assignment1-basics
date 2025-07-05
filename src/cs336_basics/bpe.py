@@ -14,7 +14,7 @@ from cs336_basics._bpe import pretokenize_naive as pretokenize_naive_rust  # typ
 PAT = rb"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 PAT_STR = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 # For the list of available implementations, see below
-DEFAULT_PRETOK_IMPL = "parallel"
+DEFAULT_PRETOK_IMPL = "naive-rust"
 
 PretokStrategy: TypeAlias = Callable[[bytes, list[bytes]], dict[tuple[bytes, ...], int]]
 
