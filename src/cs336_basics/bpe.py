@@ -8,6 +8,8 @@ from itertools import takewhile
 
 import regex as re
 
+from cs336_basics._bpe import pretokenize_naive as pretokenize_naive_rust
+
 PAT = rb"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 PAT_STR = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 # For the list of available implementations, see below
@@ -81,6 +83,14 @@ def pretokenized_counts(corpus: bytes, special_tokens: list[bytes]) -> dict[tupl
     """Run a pre-tokenizer similar to the one used by GPT-2, returning pretokenized counts for efficiency"""
     text_parts = split_special_tokens(corpus, special_tokens)
     return _pretokenize_parts(text_parts)
+
+
+def pretokenized_counts_rust(corpus: bytes, special_tokens: list[bytes]) -> dict[tuple[bytes, ...], int]:
+    """Run a pre-tokenizer similar to the one used by GPT-2, returning pretokenized counts for efficiency.
+
+    This one uses a pretokenization implemented in rust
+    """
+    return pretokenize_naive_rust(corpus.decode("utf-8"), [tok.decode("utf-8") for tok in special_tokens])
 
 
 def naive_bpe(
@@ -171,7 +181,6 @@ def _pretokenize_parts(parts: Iterable[bytes]) -> dict[tuple[bytes, ...], int]:
     pattern = re.compile(PAT)
     freqs: Counter[tuple[bytes, ...]] = Counter()
     for part in parts:
-        # TODO(alvaro): There's a concurrent mode, maybe it works okay
         scanner = pattern.finditer(part, concurrent=True)
         freqs += Counter(tuple(c.to_bytes() for c in m.group(0)) for m in scanner)
 
@@ -190,18 +199,6 @@ def pretokenized_counts_parallel(corpus: bytes, special_tokens: list[bytes]) -> 
 
     # Collect the results from all the workers
     return dict(reduce(operator.add, chunks_res))
-
-
-def run_pretokenize(chunk):
-    import traceback
-
-    print(f"Running pretokenize for {type(chunk)}")
-    try:
-        _pretokenize_parts(chunk)
-    except Exception:
-        print("Ayo something broke")
-        traceback.print_exc()
-        raise
 
 
 def _split_chunks(parts: Iterable[bytes], n: int) -> Iterable[Iterable[bytes]]:
@@ -232,4 +229,5 @@ def _split_chunks(parts: Iterable[bytes], n: int) -> Iterable[Iterable[bytes]]:
 PRETOK_IMPLS = {
     "naive": pretokenized_counts,
     "parallel": pretokenized_counts_parallel,
+    "rust-naive": pretokenized_counts_rust,
 }
