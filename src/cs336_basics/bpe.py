@@ -5,17 +5,18 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from functools import reduce
 from itertools import takewhile
+from typing import TypeAlias
 
 import regex as re
 
-from cs336_basics._bpe import pretokenize_naive as pretokenize_naive_rust
+from cs336_basics._bpe import pretokenize_naive as pretokenize_naive_rust  # type: ignore
 
 PAT = rb"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 PAT_STR = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 # For the list of available implementations, see below
 DEFAULT_PRETOK_IMPL = "parallel"
 
-type PretokStrategy = Callable[[bytes, list[bytes]], dict[tuple[bytes, ...], int]]
+PretokStrategy: TypeAlias = Callable[[bytes, list[bytes]], dict[tuple[bytes, ...], int]]
 
 
 # from typing import Protocol, Self
@@ -90,7 +91,7 @@ def pretokenized_counts_rust(corpus: bytes, special_tokens: list[bytes]) -> dict
 
     This one uses a pretokenization implemented in rust
     """
-    return pretokenize_naive_rust(corpus.decode("utf-8"), [tok.decode("utf-8") for tok in special_tokens])
+    return pretokenize_naive_rust(corpus, special_tokens)
 
 
 def naive_bpe(
@@ -229,5 +230,5 @@ def _split_chunks(parts: Iterable[bytes], n: int) -> Iterable[Iterable[bytes]]:
 PRETOK_IMPLS = {
     "naive": pretokenized_counts,
     "parallel": pretokenized_counts_parallel,
-    "rust-naive": pretokenized_counts_rust,
+    "naive-rust": pretokenized_counts_rust,
 }
